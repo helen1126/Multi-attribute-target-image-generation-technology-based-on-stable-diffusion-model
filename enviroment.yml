@@ -1,0 +1,23 @@
+name: multi-attribute-image-generation
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pytorch
+  - torchvision
+  - opencv
+  - pillow
+  - matplotlib
+  - transformers
+  - tensorboard
+  - redis-py
+  - geoip2
+  - flask
+  - scikit-learn
+  - numpy
+  - requests
+  - openai
+  - pip:
+    - GPUtil
+    - openai-clip
