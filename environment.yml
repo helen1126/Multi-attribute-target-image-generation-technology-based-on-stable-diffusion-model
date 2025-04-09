@@ -21,3 +21,4 @@ dependencies:
   - pip:
     - GPUtil
     - openai-clip
+    - user=agents
