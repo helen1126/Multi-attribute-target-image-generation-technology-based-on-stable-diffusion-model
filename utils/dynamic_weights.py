@@ -196,7 +196,7 @@ def load_conflicts() -> Dict:
     :return: 冲突数据字典
     """
     try:
-        with open('conflicts.json', 'r', encoding='utf-8') as f:
+        with open('data/conflicts.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         return {"conflict_cases": []}

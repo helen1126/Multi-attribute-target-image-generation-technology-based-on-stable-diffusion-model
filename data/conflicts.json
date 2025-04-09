@@ -1,0 +1,184 @@
+{
+  "conflict_cases": [
+    {
+      "name": "沙漠+极光",
+      "categories": ["自然景观", "自然景观"],
+      "conflict_reason": "沙漠是干旱炎热的地貌，极光则出现在极地寒冷地区，两者在自然环境中难以共存。",
+      "image_links": [
+        "https://example.com/沙漠.jpg",
+        "https://example.com/极光.jpg"
+      ]
+    },
+    {
+      "name": "低多边形+写实",
+      "categories": ["风格属性", "风格属性"],
+      "conflict_reason": "低多边形风格强调简约几何形状，而写实风格追求细节和真实感，两者在视觉表现上冲突。",
+      "image_links": [
+        "https://example.com/低多边形.jpg",
+        "https://example.com/写实.jpg"
+      ]
+    },
+    {
+      "name": "室内+自然",
+      "categories": ["场景属性", "场景属性"],
+      "conflict_reason": "室内场景通常是人造环境，而自然场景是户外自然环境，两者在空间上存在矛盾。",
+      "image_links": [
+        "https://example.com/室内.jpg",
+        "https://example.com/自然.jpg"
+      ]
+    },
+    {
+      "name": "像素风+高分辨率",
+      "categories": ["风格属性", "技术指标"],
+      "conflict_reason": "像素风以低分辨率和像素化效果为特征，与高分辨率的技术要求冲突。",
+      "image_links": [
+        "https://example.com/像素风.jpg",
+        "https://example.com/高分辨率.jpg"
+      ]
+    },
+    {
+      "name": "食物+工具",
+      "categories": ["内容属性", "内容属性"],
+      "conflict_reason": "食物是可食用的物品，工具是功能性物品，两者在属性和用途上完全不同。",
+      "image_links": [
+        "https://example.com/食物.jpg",
+        "https://example.com/工具.jpg"
+      ]
+    },
+    {
+      "name": "抽象艺术+描述准确性",
+      "categories": ["风格属性", "跨模态属性"],
+      "conflict_reason": "抽象艺术强调非具象表达，而描述准确性需要清晰传达信息，两者在表达方式上冲突。",
+      "image_links": [
+        "https://example.com/抽象艺术.jpg",
+        "https://example.com/描述准确性.jpg"
+      ]
+    },
+    {
+      "name": "车辆+书籍",
+      "categories": ["内容属性", "内容属性"],
+      "conflict_reason": "车辆是交通工具，书籍是文化载体，两者在功能和形态上无直接关联。",
+      "image_links": [
+        "https://example.com/车辆.jpg",
+        "https://example.com/书籍.jpg"
+      ]
+    },
+    {
+      "name": "卡通+写实",
+      "categories": ["风格属性", "风格属性"],
+      "conflict_reason": "卡通风格通常夸张和简化，而写实风格追求真实感，两者在表现手法上对立。",
+      "image_links": [
+        "https://example.com/卡通.jpg",
+        "https://example.com/写实.jpg"
+      ]
+    },
+    {
+      "name": "餐厅+工业",
+      "categories": ["场景属性", "场景属性"],
+      "conflict_reason": "餐厅是餐饮场所，工业是生产制造环境，两者在功能和场景上差异较大。",
+      "image_links": [
+        "https://example.com/餐厅.jpg",
+        "https://example.com/工业.jpg"
+      ]
+    },
+    {
+      "name": "水彩+噪声级别",
+      "categories": ["风格属性", "技术指标"],
+      "conflict_reason": "水彩风格以柔和色彩为特征，而噪声级别高通常意味着图像质量差，两者在视觉效果上冲突。",
+      "image_links": [
+        "https://example.com/水彩.jpg",
+        "https://example.com/噪声级别.jpg"
+      ]
+    },
+    {
+      "name": "动物+建筑",
+      "categories": ["内容属性", "内容属性"],
+      "conflict_reason": "动物是生物，建筑是人造结构，两者在属性和形态上无直接关联。",
+      "image_links": [
+        "https://example.com/动物.jpg",
+        "https://example.com/建筑.jpg"
+      ]
+    },
+    {
+      "name": "超现实主义+语义相关性",
+      "categories": ["风格属性", "跨模态属性"],
+      "conflict_reason": "超现实主义强调梦幻和非逻辑，而语义相关性需要逻辑一致性，两者在表达逻辑上冲突。",
+      "image_links": [
+        "https://example.com/超现实主义.jpg",
+        "https://example.com/语义相关性.jpg"
+      ]
+    },
+    {
+      "name": "街道+医疗",
+      "categories": ["场景属性", "场景属性"],
+      "conflict_reason": "街道是公共通行场所，医疗是专业服务场所，两者在功能和场景上差异较大。",
+      "image_links": [
+        "https://example.com/街道.jpg",
+        "https://example.com/医疗.jpg"
+      ]
+    },
+    {
+      "name": "素描+色彩平衡",
+      "categories": ["风格属性", "技术指标"],
+      "conflict_reason": "素描通常是单色或黑白，而色彩平衡需要多色调和，两者在色彩表现上冲突。",
+      "image_links": [
+        "https://example.com/素描.jpg",
+        "https://example.com/色彩平衡.jpg"
+      ]
+    },
+    {
+      "name": "植物+家具",
+      "categories": ["内容属性", "内容属性"],
+      "conflict_reason": "植物是自然生物，家具是人造物品，两者在属性和功能上无直接关联。",
+      "image_links": [
+        "https://example.com/植物.jpg",
+        "https://example.com/家具.jpg"
+      ]
+    },
+    {
+      "name": "涂鸦+美学评分",
+      "categories": ["风格属性", "技术指标"],
+      "conflict_reason": "涂鸦风格通常随意和非正式，而美学评分需要较高的艺术价值，两者在审美标准上冲突。",
+      "image_links": [
+        "https://example.com/涂鸦.jpg",
+        "https://example.com/美学评分.jpg"
+      ]
+    },
+    {
+      "name": "教育+娱乐",
+      "categories": ["场景属性", "场景属性"],
+      "conflict_reason": "教育是严肃的学习场所，娱乐是轻松的休闲场所，两者在氛围和功能上差异较大。",
+      "image_links": [
+        "https://example.com/教育.jpg",
+        "https://example.com/娱乐.jpg"
+      ]
+    },
+    {
+      "name": "自然景观+工业",
+      "categories": ["内容属性", "场景属性"],
+      "conflict_reason": "自然景观强调自然美，工业场景强调人造环境，两者在环境特征上冲突。",
+      "image_links": [
+        "https://example.com/自然景观.jpg",
+        "https://example.com/工业.jpg"
+      ]
+    },
+    {
+      "name": "油画+压缩率",
+      "categories": ["风格属性", "技术指标"],
+      "conflict_reason": "油画通常具有丰富的细节和纹理，而高压缩率可能导致细节丢失，两者在图像质量上冲突。",
+      "image_links": [
+        "https://example.com/油画.jpg",
+        "https://example.com/压缩率.jpg"
+      ]
+    },
+    {
+      "name": "图文相似度+生成多样性",
+      "categories": ["跨模态属性", "跨模态属性"],
+      "conflict_reason": "图文相似度要求图文一致，而生成多样性强调多样性，两者在生成目标上冲突。",
+      "image_links": [
+        "https://example.com/图文相似度.jpg",
+        "https://example.com/生成多样性.jpg"
+      ]
+    }
+  ]
+}
