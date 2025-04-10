@@ -119,7 +119,7 @@ class UNet(nn.Module):
 
         return self.final_conv(x)
 
-
+'''临时测试代码
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='UNet with Attention')
     parser.add_argument('--in_channels', type=int, default=3, help='Number of input channels')
@@ -231,3 +231,4 @@ if __name__ == "__main__":
     # 清空缓存
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+'''

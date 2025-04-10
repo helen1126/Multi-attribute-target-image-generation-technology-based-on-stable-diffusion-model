@@ -80,7 +80,7 @@ class TextEncoderWithMHA:
 
         return output
 
-
+'''临时测试函数
 def test_text_encoder():
     # 可以在这里指定所需的输出维度
     encoder = TextEncoderWithMHA(output_dim=768)
@@ -97,3 +97,4 @@ def test_text_encoder():
 
 if __name__ == "__main__":
     test_text_encoder()
+'''
