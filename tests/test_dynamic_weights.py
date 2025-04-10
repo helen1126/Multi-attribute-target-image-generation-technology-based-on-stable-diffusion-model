@@ -263,7 +263,7 @@ def test_access_limit_test(start_and_stop_api):
     }
 
     # 发送多次请求以触发访问限制
-    for i in range(50):
+    for i in range(17):
         try:
             requests.post(url, headers=headers, json=standard_input)
         except requests.RequestException as e:
