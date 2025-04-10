@@ -5,7 +5,8 @@ import hashlib
 import time
 import base64
 from os import path
-from unittest.mock import patch
+import subprocess
+import pytest
 
 # 配置日志记录
 logging.basicConfig(
@@ -75,7 +76,17 @@ def get_headers(input_data):
     return headers
 
 
-def test_run_tests():
+@pytest.fixture(scope="module")
+def start_and_stop_api():
+    api_process = subprocess.Popen(['python', 'utils/dynamic_weights.py'])
+    time.sleep(5)  # 等待接口启动
+    yield
+    if api_process:
+        api_process.terminate()
+        api_process.wait()
+
+
+def test_run_tests(start_and_stop_api):
     try:
         # 从 examples.json 文件中读取测试用例
         with open("tests/examples/examples.json", "r", encoding="utf-8") as f:
@@ -86,91 +97,45 @@ def test_run_tests():
             input_data = example["input_data"]
             headers = get_headers(input_data)
 
-            with patch('requests.post') as mock_post:
-                mock_response = mock_post.return_value
-                mock_response.status_code = 200
-                mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-                try:
-                    # 发送 POST 请求
-                    response = requests.post(url, headers=headers, json=input_data)
-                    response.raise_for_status()
-                    result = response.json()
-                    logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-                except requests.RequestException as e:
-                    logging.error(
-                        f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}"
-                    )
-                except json.JSONDecodeError as e:
-                    logging.error(
-                        f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-                    )
+            response = requests.post(url, headers=headers, json=input_data)
+            try:
+                result = response.json()
+                logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+            except json.JSONDecodeError:
+                pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
     except FileNotFoundError:
-        logging.error("未找到 examples.json 文件，请确保文件存在。")
+        pytest.fail("未找到 examples.json 文件，请确保文件存在。")
     except KeyError:
-        logging.error("examples.json 文件格式有误，请检查是否包含 'examples' 字段。")
+        pytest.fail("examples.json 文件格式有误，请检查是否包含 'examples' 字段。")
 
 
-def test_other_examples():
+def test_other_examples(start_and_stop_api):
     # 测试无请求头
     info = "28.lack headers"
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            # 发送 POST 请求
-            response = requests.post(url, json=standard_input)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, json=standard_input)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
     # 测试缺失 content-type 的请求头
     info = "29.lack content-type"
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            # 发送 POST 请求
-            response = requests.post(url, headers=wrong_headers_2, json=standard_input)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, headers=wrong_headers_2, json=standard_input)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
     # 测试缺少 x-api-key 的请求头
     info = "30.lack x-api-key"
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            # 发送 POST 请求
-            response = requests.post(url, headers=wrong_headers_1, json=standard_input)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, headers=wrong_headers_1, json=standard_input)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
     # 测试两个图片属性
     info = "31.two images"
@@ -203,22 +168,12 @@ def test_other_examples():
         "debug_mode": True,
     }
     headers = get_headers(input_data)
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            response = requests.post(url, headers=headers, json=input_data)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, headers=headers, json=input_data)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
     # 测试一个图片一个文本属性
     info = "32.one image one text"
@@ -249,22 +204,12 @@ def test_other_examples():
         "debug_mode": True,
     }
     headers = get_headers(input_data)
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            response = requests.post(url, headers=headers, json=input_data)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, headers=headers, json=input_data)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
     # 测试一个图片一个向量属性
     info = "33.one image one vector"
@@ -295,25 +240,15 @@ def test_other_examples():
         "debug_mode": True,
     }
     headers = get_headers(input_data)
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
-        try:
-            response = requests.post(url, headers=headers, json=input_data)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+    response = requests.post(url, headers=headers, json=input_data)
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
 
-def test_access_limit_test():
+def test_access_limit_test(start_and_stop_api):
     # 测试访问限制
     info = "34.access limit"
     timestamp = str(int(time.time()))
@@ -329,25 +264,17 @@ def test_access_limit_test():
 
     # 发送多次请求以触发访问限制
     for i in range(50):
-        with patch('requests.post') as mock_post:
-            mock_response = mock_post.return_value
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-            requests.post(url, headers=headers, json=standard_input)
-
-    with patch('requests.post') as mock_post:
-        mock_response = mock_post.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
-
         try:
-            response = requests.post(url, headers=headers, json=standard_input)
-            response.raise_for_status()
-            result = response.json()
-            logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+            requests.post(url, headers=headers, json=standard_input)
         except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 发送请求时出错: {e} Output: {response.text}")
-        except json.JSONDecodeError as e:
-            logging.error(
-                f"测试用例 {info} 解析响应 JSON 时出错: {e} Output: {response.text}"
-            )
+            logging.error(f"测试用例 {info} 第 {i} 次发送请求时出错: {e}")
+
+    response = requests.post(url, headers=headers, json=standard_input)
+    assert response.status_code == 429
+    try:
+        result = response.json()
+        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
+    except json.JSONDecodeError:
+        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
+
+    
