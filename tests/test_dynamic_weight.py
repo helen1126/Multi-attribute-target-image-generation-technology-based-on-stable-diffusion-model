@@ -79,7 +79,7 @@ def get_headers(input_data):
 @pytest.fixture(scope="module")
 def start_and_stop_api():
     api_process = subprocess.Popen(['python', 'utils/dynamic_weights.py'])
-    time.sleep(5)  # 等待接口启动
+    time.sleep(15)  # 等待接口启动
     yield
     if api_process:
         api_process.terminate()
