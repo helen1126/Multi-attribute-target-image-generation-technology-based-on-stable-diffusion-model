@@ -68,10 +68,13 @@ except Exception as e:
 
 # 将Base64编码的图像转换为OpenCV格式
 def base64_to_opencv(base64_string):
-    img_data = base64.b64decode(base64_string)
-    nparr = np.frombuffer(img_data, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    return img
+    try:
+        img_data = base64.b64decode(base64_string)
+        nparr = np.frombuffer(img_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        return img
+    except (base64.binascii.Error, cv2.error):
+        return None
 
 # 根据Base64图像获取CLIP编码
 def extract_image_features(base64_image):
