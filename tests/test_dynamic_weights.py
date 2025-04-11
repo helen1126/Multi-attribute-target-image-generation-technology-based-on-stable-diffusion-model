@@ -1,280 +1,416 @@
-import requests
 import json
-import logging
-import hashlib
-import time
+import numpy as np
+import cv2  # 导入 cv2 模块
+import binascii
+from utils.dynamic_weights import validate_request, adjust_weights, detect_conflict, load_conflicts, \
+    calculate_semantic_score, verify_signature, rate_limit, get_device_type, get_geo_location, \
+    encode_context, base64_to_opencv, extract_image_features, handle_conflicts, calculate_weights
+from unittest.mock import patch
+import requests
+from flask import Flask
+import torch
 import base64
-from os import path
-import subprocess
-import pytest
+from utils.dynamic_weights import app as original_app
 
-# 配置日志记录
-logging.basicConfig(
-    filename="test_api.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+app = Flask(__name__)
 
-# 接口的 URL
-url = "http://127.0.0.1:5000/api/v5/weight/calculate"
 
-# 模拟 API 密钥
-api_key = "your_api_key"
+def test_verify_signature():
+    with app.app_context():
+        with app.test_request_context():
+            # 正常签名验证
+            with patch('utils.dynamic_weights.request') as mock_request:
+                mock_request.headers.get.side_effect = ["timestamp", "signature"]
+                mock_request.get_data.return_value = b"data"
+                result = verify_signature(mock_request)
+                assert isinstance(result, bool)
 
-wrong_headers_1 = {"Content-Type": "application/json"}
-wrong_headers_2 = {"X-Api-Key": "your_api_key_here"}
+            # 缺少时间戳
+            with patch('utils.dynamic_weights.request') as mock_request:
+                mock_request.headers.get.side_effect = [None, "signature"]
+                mock_request.get_data.return_value = b"data"
+                result = verify_signature(mock_request)
+                assert not result
 
-standard_input = {
-    "info": "1.normal scenarios",
-    "input_data": {
-        "base_prompt": "未来主义城市景观",
+            # 缺少签名
+            with patch('utils.dynamic_weights.request') as mock_request:
+                mock_request.headers.get.side_effect = ["timestamp", None]
+                mock_request.get_data.return_value = b"data"
+                result = verify_signature(mock_request)
+                assert not result
+
+
+def test_rate_limit():
+    with app.app_context():
+        with app.test_request_context():
+            # 正常请求
+            with patch('utils.dynamic_weights.redis_client') as mock_redis:
+                with patch('utils.dynamic_weights.request') as mock_request:
+                    mock_request.remote_addr = "127.0.0.1"
+                    mock_redis.incr.return_value = 1
+                    result = rate_limit(mock_request)
+                    assert isinstance(result, bool)
+                    assert result
+
+            # 超出请求限制
+            with patch('utils.dynamic_weights.redis_client') as mock_redis:
+                with patch('utils.dynamic_weights.request') as mock_request:
+                    mock_request.remote_addr = "127.0.0.1"
+                    mock_redis.incr.return_value = 51
+                    result = rate_limit(mock_request)
+                    assert isinstance(result, bool)
+                    assert not result
+
+
+def test_validate_request():
+    # 有效请求
+    data = {
+        "base_prompt": "A dog on the grass",
         "attributes": [
             {
-                "name": "风格",
+                "name": "object",
                 "type": "text",
-                "value": "赛博朋克",
-                "initial_weight": 0.7,
-                "constraints": {
-                    "min_weight": 0.4,
-                    "max_weight": 0.9,
-                    "conflict_terms": ["蒸汽朋克", "极简主义"],
-                },
+                "value": "dog",
+                "initial_weight": 0.8
             },
             {
-                "name": "光照",
+                "name": "background",
                 "type": "text",
-                "value": "霓虹灯光",
-                "initial_weight": 0.5,
-                "constraints": {"min_weight": 0.2, "max_weight": 0.8},
-            },
-        ],
-        "temperature": 1.8,
-        "fallback_strategy": "creative",
-        "debug_mode": True,
-    },
-}
-
-
-def image_to_base64(file_path):
-    """将图片转换为 Base64 编码"""
-    with open(file_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read())
-    return encoded_string.decode('utf-8')
-
-
-def get_headers(input_data):
-    timestamp = str(int(time.time()))
-    data_str = json.dumps(input_data)
-    message = f"{data_str}{timestamp}{api_key}"
-    signature = hashlib.sha256(message.encode()).hexdigest()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Api-Key": api_key,
-        "X-Timestamp": timestamp,
-        "X-Signature": signature,
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
     }
-    return headers
+    valid, error = validate_request(data)
+    assert valid
 
+    # 请求体为空
+    data = {}
+    valid, error = validate_request(data)
+    assert not valid
 
-@pytest.fixture(scope="module")
-def start_and_stop_api():
-    api_process = subprocess.Popen(['python', 'utils/dynamic_weights.py'])
-    time.sleep(30)  # 等待接口启动
-    yield
-    if api_process:
-        api_process.terminate()
-        api_process.wait()
-
-
-def test_run_tests(start_and_stop_api):
-    try:
-        # 从 examples.json 文件中读取测试用例
-        with open("tests/examples/examples.json", "r", encoding="utf-8") as f:
-            test_data = json.load(f)
-
-        for example in test_data["examples"]:
-            info = example["info"]
-            input_data = example["input_data"]
-            headers = get_headers(input_data)
-
-            response = requests.post(url, headers=headers, json=input_data)
-            try:
-                result = response.json()
-                logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-            except json.JSONDecodeError:
-                pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
-    except FileNotFoundError:
-        pytest.fail("未找到 examples.json 文件，请确保文件存在。")
-    except KeyError:
-        pytest.fail("examples.json 文件格式有误，请检查是否包含 'examples' 字段。")
-
-
-def test_other_examples(start_and_stop_api):
-    # 测试无请求头
-    info = "28.lack headers"
-    response = requests.post(url, json=standard_input)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
-
-    # 测试缺失 content-type 的请求头
-    info = "29.lack content-type"
-    response = requests.post(url, headers=wrong_headers_2, json=standard_input)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
-
-    # 测试缺少 x-api-key 的请求头
-    info = "30.lack x-api-key"
-    response = requests.post(url, headers=wrong_headers_1, json=standard_input)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
-
-    # 测试两个图片属性
-    info = "31.two images"
-    image1_path = path.join('tests/examples', 'image1.jpg')
-    image2_path = path.join('tests/examples', 'image2.jpg')
-    input_data = {
-        "base_prompt": "未来主义城市景观",
+    # 缺少 base_prompt 和 attributes
+    data = {
         "attributes": [
             {
-                "name": "风格",
-                "type": "image",
-                "value": {"base64": image_to_base64(image1_path)},
-                "initial_weight": 0.7,
-                "constraints": {
-                    "min_weight": 0.4,
-                    "max_weight": 0.9,
-                    "conflict_terms": ["蒸汽朋克", "极简主义"],
-                },
-            },
-            {
-                "name": "光照",
-                "type": "image",
-                "value": {"base64": image_to_base64(image2_path)},
-                "initial_weight": 0.5,
-                "constraints": {"min_weight": 0.2, "max_weight": 0.8},
-            },
-        ],
-        "temperature": 1.8,
-        "fallback_strategy": "creative",
-        "debug_mode": True,
-    }
-    headers = get_headers(input_data)
-    response = requests.post(url, headers=headers, json=input_data)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
-
-    # 测试一个图片一个文本属性
-    info = "32.one image one text"
-    input_data = {
-        "base_prompt": "未来主义城市景观",
-        "attributes": [
-            {
-                "name": "风格",
-                "type": "image",
-                "value": {"base64": image_to_base64(image1_path)},
-                "initial_weight": 0.7,
-                "constraints": {
-                    "min_weight": 0.4,
-                    "max_weight": 0.9,
-                    "conflict_terms": ["蒸汽朋克", "极简主义"],
-                },
-            },
-            {
-                "name": "光照",
+                "name": "object",
                 "type": "text",
-                "value": "霓虹灯光",
-                "initial_weight": 0.5,
-                "constraints": {"min_weight": 0.2, "max_weight": 0.8},
-            },
-        ],
-        "temperature": 1.8,
-        "fallback_strategy": "creative",
-        "debug_mode": True,
+                "value": "dog",
+                "initial_weight": 0.8
+            }
+        ]
     }
-    headers = get_headers(input_data)
-    response = requests.post(url, headers=headers, json=input_data)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
+    valid, error = validate_request(data)
+    assert not valid
 
-    # 测试一个图片一个向量属性
-    info = "33.one image one vector"
-    input_data = {
-        "base_prompt": "未来主义城市景观",
+    # attributes 数组为空
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": []
+    }
+    valid, error = validate_request(data)
+    assert not valid
+
+    # initial_weight 超出范围
+    data = {
+        "base_prompt": "A dog on the grass",
         "attributes": [
             {
-                "name": "风格",
-                "type": "image",
-                "value": {"base64": image_to_base64(image1_path)},
-                "initial_weight": 0.7,
-                "constraints": {
-                    "min_weight": 0.4,
-                    "max_weight": 0.9,
-                    "conflict_terms": ["蒸汽朋克", "极简主义"],
-                },
+                "name": "object",
+                "type": "text",
+                "value": "dog",
+                "initial_weight": 1.2
             },
             {
-                "name": "向量特征",
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
+    }
+    valid, error = validate_request(data)
+    assert not valid
+
+    # type 字段无效
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
+                "type": "invalid_type",
+                "value": "dog",
+                "initial_weight": 0.8
+            },
+            {
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
+    }
+    valid, error = validate_request(data)
+    assert not valid
+
+    # text 类型的 value 不是字符串
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
+                "type": "text",
+                "value": 123,
+                "initial_weight": 0.8
+            },
+            {
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
+    }
+    valid, error = validate_request(data)
+    assert not valid
+
+    # image 类型的 value 不包含 base64 字段
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
+                "type": "image",
+                "value": {},
+                "initial_weight": 0.8
+            },
+            {
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
+    }
+    valid, error = validate_request(data)
+    assert not valid
+
+    # vector 类型的 value 不是列表
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
                 "type": "vector",
-                "value": [0.1, 0.2, 0.3],
-                "initial_weight": 0.5,
-                "constraints": {"min_weight": 0.2, "max_weight": 0.8},
+                "value": 123,
+                "initial_weight": 0.8
             },
-        ],
-        "temperature": 1.8,
-        "fallback_strategy": "creative",
-        "debug_mode": True,
+            {
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
     }
-    headers = get_headers(input_data)
-    response = requests.post(url, headers=headers, json=input_data)
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
+    valid, error = validate_request(data)
+    assert not valid
 
 
-def test_access_limit_test(start_and_stop_api):
-    # 测试访问限制
-    info = "34.access limit"
-    timestamp = str(int(time.time()))
-    data_str = json.dumps(standard_input)
-    message = f"{data_str}{timestamp}{api_key}"
-    signature = hashlib.sha256(message.encode()).hexdigest()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Api-Key": api_key,
-        "X-Timestamp": timestamp,
-        "X-Signature": signature,
+def test_adjust_weights():
+    attributes = [
+        {
+            "name": "object",
+            "type": "text",
+            "value": "dog",
+            "initial_weight": 0.8
+        },
+        {
+            "name": "background",
+            "type": "text",
+            "value": "grass",
+            "initial_weight": 0.2
+        }
+    ]
+    temperature = 1.2
+    final_weights, adjustment_log = adjust_weights(attributes, temperature)
+    assert isinstance(final_weights, dict)
+    assert isinstance(adjustment_log, list)
+
+    # 测试空属性列表
+    attributes = []
+    final_weights, adjustment_log = adjust_weights(attributes, temperature)
+    assert isinstance(final_weights, dict)
+    assert isinstance(adjustment_log, list)
+
+
+def test_detect_conflict():
+    attr1 = {
+        "name": "object",
+        "type": "text",
+        "value": "dog"
     }
+    attr2 = {
+        "name": "background",
+        "type": "text",
+        "value": "grass"
+    }
+    conflicts = load_conflicts()
+    conflict = detect_conflict(attr1, attr2, conflicts)
+    assert isinstance(conflict, bool)
 
-    # 发送多次请求以触发访问限制
-    for i in range(17):
-        try:
-            requests.post(url, headers=headers, json=standard_input)
-        except requests.RequestException as e:
-            logging.error(f"测试用例 {info} 第 {i} 次发送请求时出错: {e}")
+    # 测试显式冲突
+    conflicts = {"conflict_cases": [{"name": "dog+grass"}]}
+    conflict = detect_conflict(attr1, attr2, conflicts)
+    assert conflict
 
-    response = requests.post(url, headers=headers, json=standard_input)
-    assert response.status_code == 429 or response.status_code == 500
-    try:
-        result = response.json()
-        logging.info(f"测试用例 {info} 的响应结果: {response.text}")
-    except json.JSONDecodeError:
-        pytest.fail(f"测试用例 {info} 解析响应 JSON 时出错: {response.text}")
 
+def test_calculate_semantic_score():
+    value1 = {"type": "text", "value": "dog"}
+    value2 = {"type": "text", "value": "cat"}
+    score = calculate_semantic_score(value1, value2)
+    assert isinstance(score, float)
+
+    # 测试无效类型
+    value1 = {"type": "invalid_type", "value": "dog"}
+    value2 = {"type": "text", "value": "cat"}
+    score = calculate_semantic_score(value1, value2)
+    assert score == 0.1
+
+
+def test_get_device_type():
+    with app.app_context():
+        with app.test_request_context():
+            result = get_device_type()
+            assert isinstance(result, (type(None), str))
+
+
+def test_get_geo_location():
+    ip = "127.0.0.1"
+    result = get_geo_location(ip)
+    assert isinstance(result, (type(None), str))
+
+    # 测试无效 IP
+    ip = "invalid_ip"
+    result = get_geo_location(ip)
+    assert isinstance(result, (type(None), str))
+
+
+def test_encode_context():
+    with app.app_context():
+        with app.test_request_context():
+            result = encode_context()
+            # 检查 encode_context 函数的返回值类型，确保符合预期
+            assert isinstance(result, (type(None), np.ndarray))
+
+
+def test_base64_to_opencv():
+    # 使用有效的 Base64 编码字符串
+    test_image = np.zeros((100, 100, 3), dtype=np.uint8)
+    _, buffer = cv2.imencode('.jpg', test_image)
+    base64_string = base64.b64encode(buffer).decode('utf-8')
+    result = base64_to_opencv(base64_string)
+    assert isinstance(result, (type(None), np.ndarray))
+
+    # 测试无效 Base64 字符串
+    base64_string = "invalid_base64_string"
+    result = base64_to_opencv(base64_string)
+    assert isinstance(result, (type(None), np.ndarray))
+
+
+def test_extract_image_features():
+    base64_image = "test_base64_image"
+    result = extract_image_features(base64_image)
+    assert isinstance(result, (type(None), torch.Tensor))
+
+    # 测试无效 Base64 图像
+    base64_image = "invalid_base64_image"
+    result = extract_image_features(base64_image)
+    assert isinstance(result, (type(None), torch.Tensor))
+
+
+def test_handle_conflicts():
+    data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
+                "type": "text",
+                "value": "dog",
+                "initial_weight": 0.8
+            },
+            {
+                "name": "background",
+                "type": "text",
+                "value": "grass",
+                "initial_weight": 0.2
+            }
+        ]
+    }
+    conflicts = load_conflicts()
+    fallback_strategy = "balanced"
+    temperature = 1.2
+    final_weights, conflict_report, adjustment_log = handle_conflicts(data, conflicts, fallback_strategy, temperature)
+    assert isinstance(final_weights, (dict, type(None)))
+    assert isinstance(conflict_report, dict)
+    assert isinstance(adjustment_log, list)
+
+    # 测试 strict 策略下的冲突
+    conflicts = {"conflict_cases": [{"name": "dog+grass"}]}
+    fallback_strategy = "strict"
+    final_weights, conflict_report, adjustment_log = handle_conflicts(data, conflicts, fallback_strategy, temperature)
+    assert final_weights is None
+
+    # 测试 balanced 策略下的冲突
+    conflicts = {"conflict_cases": [{"name": "dog+grass"}]}
+    fallback_strategy = "balanced"
+    final_weights, conflict_report, adjustment_log = handle_conflicts(data, conflicts, fallback_strategy, temperature)
+    assert isinstance(final_weights, dict)
+
+    # 测试 creative 策略下的冲突
+    conflicts = {"conflict_cases": [{"name": "dog+grass"}]}
+    fallback_strategy = "creative"
+    final_weights, conflict_report, adjustment_log = handle_conflicts(data, conflicts, fallback_strategy, temperature)
+    assert isinstance(final_weights, dict)
+
+
+
+def test_calculate_weights():
+    with original_app.test_client() as client:
+        # 正常请求
+        with patch('requests.post') as mock_post:
+            mock_response = mock_post.return_value
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"code": 200, "data": {"final_weights": {}}}
+
+            with patch('utils.dynamic_weights.verify_signature', return_value=True):
+                with patch('utils.dynamic_weights.rate_limit', return_value=True):
+                    data = {
+                        "base_prompt": "A dog on the grass",
+                        "attributes": [
+                            {
+                                "name": "object",
+                                "type": "text",
+                                "value": "dog",
+                                "initial_weight": 0.8
+                            },
+                            {
+                                "name": "background",
+                                "type": "text",
+                                "value": "grass",
+                                "initial_weight": 0.2
+                            }
+                        ],
+                        "temperature": 1.2,
+                        "fallback_strategy": "balanced",
+                        "debug_mode": False
+                    }
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'X-Api-Key': 'valid_api_key',
+                        'X-Timestamp': 'timestamp',
+                        'X-Signature': 'signature'
+                    }
+                    response = client.post('/api/v5/weight/calculate', json=data, headers=headers)
+                    assert response.status_code == 200
     
