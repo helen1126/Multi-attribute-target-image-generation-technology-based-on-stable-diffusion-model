@@ -1,0 +1,17 @@
+pytorch
+torchvision
+opencv
+pillow
+matplotlib
+transformers
+tensorboard
+redis-py
+geoip2
+flask
+scikit-learn
+numpy
+requests
+openai
+GPUtil
+openai-clip
+user-agents
