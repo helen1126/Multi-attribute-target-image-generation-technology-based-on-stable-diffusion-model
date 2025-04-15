@@ -3,7 +3,7 @@ import pytest
 from models.dynamic_u_net import DoubleConv, SpatialSemanticAttention, UNet
 from models.mha import TextEncoderWithMHA
 
-# ²âÊÔ DoubleConv Àà
+# æµ‹è¯• DoubleConv ç±»
 def test_double_conv():
     in_channels = 3
     out_channels = 64
@@ -12,7 +12,7 @@ def test_double_conv():
     output = double_conv(x)
     assert output.shape[1] == out_channels
 
-# ²âÊÔ SpatialSemanticAttention Àà
+# æµ‹è¯• SpatialSemanticAttention ç±»
 def test_spatial_semantic_attention():
     in_channels = 64
     semantic_dim = 768
@@ -23,7 +23,7 @@ def test_spatial_semantic_attention():
     output = attention(x, semantic_embedding, weights)
     assert output.shape == x.shape
 
-# ²âÊÔ UNet Àà
+# æµ‹è¯• UNet ç±»
 def test_unet():
     in_channels = 3
     out_channels = 3
