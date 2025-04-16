@@ -22,7 +22,7 @@ setup(
         'matplotlib',
         'transformers',
         'tensorboard',
-        'redis-py',
+        'redis',
         'geoip2',
         'flask',
         'scikit-learn',
