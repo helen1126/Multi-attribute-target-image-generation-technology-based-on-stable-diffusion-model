@@ -349,7 +349,7 @@ def verify_signature(request):
     data = request.get_data(as_text=True)
     message = f"{data}{timestamp}{api_key}"
     calculated_signature = hashlib.sha256(message.encode()).hexdigest()
-    return True #calculated_signature == signature
+    return calculated_signature == signature
 
 # 频率限制
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
