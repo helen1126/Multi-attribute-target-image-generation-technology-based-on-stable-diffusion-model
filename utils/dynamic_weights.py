@@ -27,13 +27,30 @@ app = Flask(__name__)
 # 使用自定义的 JSON 编码器
 app.json = CustomJSONProvider(app)
 
-# 获取设备类型
+# 加载CLIP模型
+device = "cuda" if torch.cuda.is_available() else "cpu"
+try:
+    clip_model, preprocess = clip.load('ViT-B/32', device=device)
+except Exception as e:
+    print(f"模型加载失败: {e}")
+    clip_model = None
+
 def get_device_type():
+    """
+    获取当前设备的类型信息。
+
+    :return: 设备类型的相关信息
+    """
     user_agent = parse(request.headers.get("User-Agent", ""))
     return "mobile" if user_agent.is_mobile else "PC"
 
-# 获取地理位置
 def get_geo_location(ip):
+    """
+    获取IP地址的地理位置
+
+    :param ip: IP地址
+    :return: 国家代码，如"CN"
+    """
     try:
         reader = geoip2.database.Reader('/path/to/GeoLite2-City.mmdb')
         response = reader.city(ip)
@@ -43,13 +60,18 @@ def get_geo_location(ip):
 
 # 上下文特征合并
 def encode_context():
+    """
+    获取上下文特征向量，包含设备类型和地理位置
+
+    :return: 上下文特征向量
+    """
     device = get_device_type()
     geo = get_geo_location(request.remote_addr)
     # 示例编码逻辑
     device_encoder = OneHotEncoder(handle_unknown='ignore')
     geo_encoder = OneHotEncoder(handle_unknown='ignore')
 
-    # 训练编码器（需根据实际类别初始化）
+    # 训练编码器
     device_encoder.fit(np.array([["mobile"], ["PC"]]))
     geo_encoder.fit(np.array([["CN"], ["US"], ["unknown"]]))
 
@@ -57,17 +79,13 @@ def encode_context():
     device_vec = device_encoder.transform([[device]]).toarray()[0]
     geo_vec = geo_encoder.transform([[geo]]).toarray()[0]
     return np.concatenate([device_vec, geo_vec])
-
-# 加载CLIP模型
-device = "cuda" if torch.cuda.is_available() else "cpu"
-try:
-    clip_model, preprocess = clip.load('ViT-B/32', device=device)
-except Exception as e:
-    print(f"模型加载失败: {e}")
-    clip_model = None
-
-# 将Base64编码的图像转换为OpenCV格式
 def base64_to_opencv(base64_string):
+    """
+    将Base64编码的图像转换为OpenCV格式
+
+    :param base64_string: Base64编码的图像字符串
+    :return: OpenCV格式的图像
+    """
     try:
         img_data = base64.b64decode(base64_string)
         nparr = np.frombuffer(img_data, np.uint8)
@@ -76,8 +94,13 @@ def base64_to_opencv(base64_string):
     except (base64.binascii.Error, cv2.error):
         return None
 
-# 根据Base64图像获取CLIP编码
 def extract_image_features(base64_image):
+    """
+    提取图像特征，支持Base64编码的图像
+
+    :param base64_image: Base64编码的图像字符串
+    :return: 图像特征向量
+    """
     try:
         # 将Base64图像转换为OpenCV格式
         cv_image = base64_to_opencv(base64_image)
@@ -93,11 +116,10 @@ def extract_image_features(base64_image):
         print(f"图像特征提取失败: {e}")
         return torch.randn(1, 512).to(device)
 
-
-
 def calculate_semantic_score(value1: Dict, value2: Dict) -> float:
     """
     计算两个值的语义对齐得分，支持文本、图像、向量类型
+
     :param value1: 包含类型和值的字典
     :param value2: 包含类型和值的字典
     :return: 语义对齐得分
@@ -125,7 +147,7 @@ def calculate_semantic_score(value1: Dict, value2: Dict) -> float:
     else:
         return 0.1
 
-  # 检查维度并调整
+    # 检查维度并调整
     if code1.dim() == 1:
         code1 = code1.unsqueeze(0)
     if code2.dim() == 1:
@@ -158,6 +180,7 @@ def calculate_semantic_score(value1: Dict, value2: Dict) -> float:
 def adjust_weights(attributes: List[Dict], temperature: float = 1.2) -> tuple[Dict[str, float], List[str]]:
     """
     根据语义得分和温度参数调整权重
+
     :param attributes: 属性列表
     :param temperature: 温度参数
     :return: 调整后的权重字典和调整日志
@@ -196,6 +219,7 @@ def adjust_weights(attributes: List[Dict], temperature: float = 1.2) -> tuple[Di
 def load_conflicts() -> Dict:
     """
     从conflicts.json文件加载显式冲突数据
+
     :return: 冲突数据字典
     """
     try:
@@ -207,6 +231,7 @@ def load_conflicts() -> Dict:
 def detect_conflict(attr1: Dict, attr2: Dict, conflicts: Dict) -> bool:
     """
     检测两个属性是否冲突
+
     :param attr1: 属性1
     :param attr2: 属性2
     :param conflicts: 从conflicts.json加载的冲突数据
@@ -225,6 +250,7 @@ def detect_conflict(attr1: Dict, attr2: Dict, conflicts: Dict) -> bool:
 def validate_request(data):
     """
     验证请求数据的有效性
+
     :param data: 请求数据
     :return: 验证结果和错误信息
     """
@@ -288,6 +314,7 @@ def validate_request(data):
 def handle_conflicts(data, conflicts, fallback_strategy, temperature):
     """
     处理属性冲突
+
     :param data: 请求数据
     :param conflicts: 冲突数据
     :param fallback_strategy: 回退策略
@@ -339,8 +366,13 @@ def handle_conflicts(data, conflicts, fallback_strategy, temperature):
     }
     return final_weights, conflict_report, adjustment_log
 
-# 模拟请求签名校验
 def verify_signature(request):
+    """
+    验证请求签名
+
+    :param request: 请求对象
+    :return: 是否验证通过
+    """
     api_key = "your_api_key"  # 替换为实际的API密钥
     timestamp = request.headers.get('X-Timestamp')
     signature = request.headers.get('X-Signature')
@@ -354,6 +386,12 @@ def verify_signature(request):
 # 频率限制
 redis_client = redis.Redis(host='localhost', port=6379, db=0)
 def rate_limit(request):
+    """
+    限制每个IP地址的请求频率
+
+    :param request: 请求对象
+    :return: 是否允许请求
+    """
     client_ip = request.remote_addr
     key = f"rate_limit:{client_ip}"
     current_count = redis_client.incr(key)
@@ -365,6 +403,9 @@ def rate_limit(request):
 
 @app.route('/api/v5/weight/calculate', methods=['POST'])
 def calculate_weights():
+    """
+    计算动态权重的API接口
+    """
     start_time = time.time()
     max_gpu_usage = 0  # 初始化最大 GPU 使用率为 0
 
