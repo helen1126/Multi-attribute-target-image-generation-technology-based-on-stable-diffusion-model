@@ -3,9 +3,13 @@ name: test_on_dev
 on:
   push:
     branches:
+<<<<<<< HEAD
       - dev
   schedule:
     - cron: '0 22 * * *'  # Ã¿ÈÕ22:00´¥·¢
+=======
+      - main
+>>>>>>> origin
 
 jobs:
   build-linux:
