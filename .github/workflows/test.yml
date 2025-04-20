@@ -1,4 +1,4 @@
-name: test_on_dev
+name: test_on_main
 
 on:
   push:
