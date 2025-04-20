@@ -5,10 +5,22 @@ import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 from models.mha import TextEncoderWithMHA
 import argparse
+import requests
+import time
+import json
+import hashlib
 
-# 双卷积模块
 class DoubleConv(nn.Module):
+    """
+    双卷积模块
+    """
     def __init__(self, in_channels, out_channels):
+        """
+        初始化双卷积模块
+
+        :param in_channels: 输入通道数
+        :param out_channels: 输出通道数
+        """
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
@@ -20,11 +32,25 @@ class DoubleConv(nn.Module):
         )
 
     def forward(self, x):
+        """
+        前向传播函数
+
+        :param x: 输入张量
+        :return: 输出张量
+        """
         return self.conv(x)
 
-# 空间-语义交叉注意力模块
 class SpatialSemanticAttention(nn.Module):
+    """
+    空间语义注意力模块
+    """
     def __init__(self, in_channels, semantic_dim):
+        """
+        初始化空间语义注意力模块
+
+        :param in_channels: 输入通道数
+        :param semantic_dim: 语义嵌入维度
+        """
         super().__init__()
         self.semantic_dim = semantic_dim
         self.W_q = nn.Linear(semantic_dim, in_channels)
@@ -32,21 +58,37 @@ class SpatialSemanticAttention(nn.Module):
         self.W_v = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.W_o = nn.Conv2d(in_channels, in_channels, kernel_size=1)
 
-    def forward(self, x, semantic_embedding):
+    def forward(self, x, semantic_embedding, weights):
+        """
+        前向传播函数
+
+        :param x: 输入张量
+        :param semantic_embedding: 语义嵌入张量
+        :param weights: 动态权重
+        :return: 输出张量
+        """
         b, c, h, w = x.shape
+        # 确保 weights 的形状正确
+        weights = torch.tensor(weights, device=semantic_embedding.device).unsqueeze(0).unsqueeze(-1)  # 增加批量维度
+        # 应用动态权重
+        weighted_embedding = semantic_embedding * weights
         # 计算查询
-        Q = self.W_q(semantic_embedding).unsqueeze(-1).unsqueeze(-1).expand(-1, -1, h, w)
+        Q = self.W_q(weighted_embedding).unsqueeze(-1).unsqueeze(-1)
+        # 确保 expand 的尺寸和 Q 的维度匹配
+        Q = Q.expand(b, -1, -1, h, w)
+
         # 计算键和值
         K = self.W_k(x)
         V = self.W_v(x)
 
         # 计算注意力分数
-        scores = torch.sum(Q * K, dim=1, keepdim=True) / (self.semantic_dim ** 0.5)
+        scores = torch.sum(Q * K.unsqueeze(1), dim=2, keepdim=True) / (self.semantic_dim ** 0.5)
 
         attention_weights = torch.softmax(scores, dim=-1)
 
         # 计算注意力输出
-        attn_output = attention_weights * V
+        attn_output = attention_weights * V.unsqueeze(1)
+        attn_output = attn_output.sum(dim=1)
         attn_output = self.W_o(attn_output)
 
         # 融合原始特征图和注意力输出
@@ -54,11 +96,21 @@ class SpatialSemanticAttention(nn.Module):
 
         return output
 
-# UNet模块
 class UNet(nn.Module):
+    """
+    UNet模型，包含下采样、上采样和注意力机制
+    """
     def __init__(
             self, in_channels=3, out_channels=3, features=[64, 128, 256, 512], semantic_dim=768
     ):
+        """
+        初始化UNet模型
+
+        :param in_channels: 输入通道数
+        :param out_channels: 输出通道数
+        :param features: 特征图的通道数列表
+        :param semantic_dim: 语义嵌入维度
+        """
         super().__init__()
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
@@ -84,7 +136,15 @@ class UNet(nn.Module):
 
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
-    def forward(self, x, semantic_embedding):
+    def forward(self, x, semantic_embedding, weights):
+        """
+        前向传播函数
+
+        :param x: 输入张量
+        :param semantic_embedding: 语义嵌入张量
+        :param weights: 动态权重
+        :return: 输出张量
+        """
         skip_connections = []
 
         for down in self.downs:
@@ -104,11 +164,11 @@ class UNet(nn.Module):
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx + 1](concat_skip)
-            x = self.ups[idx + 2](x, semantic_embedding)
+            x = self.ups[idx + 2](x, semantic_embedding, weights)
 
         return self.final_conv(x)
 
-
+'''临时测试代码
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='UNet with Attention')
     parser.add_argument('--in_channels', type=int, default=3, help='Number of input channels')
@@ -120,9 +180,73 @@ if __name__ == "__main__":
 
     # 初始化文本编码器
     text_encoder = TextEncoderWithMHA()
-    text = ["dog"]  # 输入文本
+    text = ["dog","grass"]  # 输入文本
     result = text_encoder.encode_text(text)
     semantic_embedding = result["embeddings"].to(device)
+
+    # 构造请求数据
+    request_data = {
+        "base_prompt": "A dog on the grass",
+        "attributes": [
+            {
+                "name": "object",
+                "type": "text",
+                "value": text[0],
+                "initial_weight": 0.8,
+                "constraints": {
+                    "min_weight": 0.4,
+                    "max_weight": 0.9,
+                }
+            },
+            {
+                "name": "background",
+                "type": "text",
+                "value": text[1],
+                "initial_weight": 0.2,
+                "constraints": {
+                    "min_weight": 0.1,
+                    "max_weight": 0.5,
+                }
+            }
+        ],
+        "temperature": 1.8,
+        "fallback_strategy": "creative",
+    }
+
+    # 获取时间戳
+    timestamp = str(int(time.time()))
+    # 检查时间戳是否在有效范围内（假设有效期为 60 秒）
+    if int(time.time()) - int(timestamp) > 60:
+        print("时间戳已过期，请重新获取")
+        timestamp = str(int(time.time()))
+
+    data_str = json.dumps(request_data, sort_keys=True)
+
+    # 计算签名
+    message = f"{data_str}{timestamp}"
+    signature = hashlib.sha256(message.encode()).hexdigest()
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-Key": "api_key",
+        "X-Timestamp": timestamp,
+        "X-Signature": signature,
+    }
+
+    # 调用 dynamic_weights 接口
+    url = 'http://127.0.0.1:5000/api/v5/weight/calculate'
+    response = requests.post(url, headers=headers, json=request_data)
+    if response.status_code == 200:
+        response_data = response.json()
+        if response_data["code"] == 200:
+            final_weights = response_data["data"]["final_weights"]
+            weights = [final_weights[key] for key in text]
+        else:
+            print(f"Failed to get dynamic weights: {response_data}")
+            weights = [1.0] * len(text)
+    else:
+        print(f"Failed to get dynamic weights: {response.text}")
+        weights = [1.0] * len(text)
 
     model = UNet(in_channels=args.in_channels, out_channels=args.out_channels).to(device)
     # 加载图片
@@ -135,7 +259,7 @@ if __name__ == "__main__":
     input_image = transform(image).unsqueeze(0).to(device)
 
     # 模型推理
-    output = model(input_image, semantic_embedding)
+    output = model(input_image, semantic_embedding, weights)
     output = output.cpu().squeeze(0).detach().numpy()
 
     # 归一化到 [0, 1] 范围
@@ -156,3 +280,4 @@ if __name__ == "__main__":
     # 清空缓存
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+'''

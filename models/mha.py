@@ -9,7 +9,16 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # 定义多头注意力层
 class MultiHeadAttention(nn.Module):
+    """
+    多头注意力机制
+    """
     def __init__(self, d_model, num_heads):
+        """
+        初始化多头注意力层
+
+        :param d_model: 模型的维度
+        :param num_heads: 注意力头的数量
+        """
         super(MultiHeadAttention, self).__init__()
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
 
@@ -23,6 +32,14 @@ class MultiHeadAttention(nn.Module):
         self.W_o = nn.Linear(d_model, d_model)
 
     def forward(self, Q, K, V):
+        """
+        前向传播函数
+
+        :param Q: 查询张量 (batch_size, seq_len, d_model)
+        :param K: 键张量 (batch_size, seq_len, d_model)
+        :param V: 值张量 (batch_size, seq_len, d_model)
+        :return: 输出张量 (batch_size, seq_len, d_model) 和注意力权重 (batch_size, num_heads, seq_len, seq_len)
+        """
         batch_size = Q.size(0)
 
         Q = self.W_q(Q).view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
@@ -40,7 +57,15 @@ class MultiHeadAttention(nn.Module):
 
 
 class TextEncoderWithMHA:
+    """
+    使用CLIP文本编码器和多头注意力机制的文本编码器
+    """
     def __init__(self, output_dim=768):
+        """
+        初始化文本编码器
+
+        :param output_dim: 输出嵌入的维度
+        """
         # 加载CLIP文本编码器和分词器
         self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch16")
         self.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16")
@@ -54,6 +79,12 @@ class TextEncoderWithMHA:
         self.output_projection = nn.Linear(d_model, output_dim)
 
     def encode_text(self, text):
+        """
+        编码文本为嵌入向量
+
+        :param text: 输入文本，可以是单个字符串或字符串列表
+        :return: 嵌入向量和注意力权重
+        """
         # 分词
         inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True)
 
@@ -80,7 +111,7 @@ class TextEncoderWithMHA:
 
         return output
 
-
+'''临时测试函数
 def test_text_encoder():
     # 可以在这里指定所需的输出维度
     encoder = TextEncoderWithMHA(output_dim=768)
@@ -97,3 +128,4 @@ def test_text_encoder():
 
 if __name__ == "__main__":
     test_text_encoder()
+'''
