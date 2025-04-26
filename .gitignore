@@ -1,0 +1,48 @@
+# 系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 虚拟环境相关
+__pycache__/
+*.pyc
+*.pyo
+
+# Conda 环境锁定文件
+.conda/
+conda-meta/
+environment.lock.yml
+
+# 日志文件
+*.log
+
+# 临时测试文件
+output_image.jpg
+test_model.pth
+test_checkpoint.pth
+
+# 代码覆盖报告
+.coverage
+coverage.xml
+
+# TensorBoard 日志
+runs/
+
+# 缓存文件
+.cache/
+
+# 自动生成的文档
+docs/_build/
+
+# 本地配置文件
+config.local.json
+
+# 依赖安装相关
+dist/
+build/
+*.egg-info/
+
+# VSCode 配置
+.vscode/
+
+# PyCharm 配置
+.idea/

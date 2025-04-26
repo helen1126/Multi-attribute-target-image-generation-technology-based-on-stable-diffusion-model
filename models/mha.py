@@ -1,13 +1,8 @@
 import torch
 import torch.nn as nn
-from transformers import CLIPTextModel, CLIPTokenizer
-from torch.utils.tensorboard import SummaryWriter
+from transformers import BertTokenizer
+from models.clip_alignment_v3 import MemoryOptimizedCLIP, TextEncoder
 
-# 可选：使用镜像源下载模型
-import os
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
-# 定义多头注意力层
 class MultiHeadAttention(nn.Module):
     """
     多头注意力机制
@@ -56,76 +51,37 @@ class MultiHeadAttention(nn.Module):
         return output, attention_weights
 
 
+
 class TextEncoderWithMHA:
-    """
-    使用CLIP文本编码器和多头注意力机制的文本编码器
-    """
-    def __init__(self, output_dim=768):
-        """
-        初始化文本编码器
+    def __init__(self, output_dim=768, device='cpu'):
+        # 加载Bert分词器
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        self.model = MemoryOptimizedCLIP(device=device)
+        self.text_encoder = self.model.text_encoder
 
-        :param output_dim: 输出嵌入的维度
-        """
-        # 加载CLIP文本编码器和分词器
-        self.tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch16")
-        self.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch16")
-
-        # 初始化多头注意力层
-        d_model = self.text_encoder.config.hidden_size
+        d_model = 512
         num_heads = 8
         self.mha = MultiHeadAttention(d_model, num_heads)
 
-        # 调整输出维度
         self.output_projection = nn.Linear(d_model, output_dim)
 
     def encode_text(self, text):
-        """
-        编码文本为嵌入向量
-
-        :param text: 输入文本，可以是单个字符串或字符串列表
-        :return: 嵌入向量和注意力权重
-        """
-        # 分词
         inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+        input_ids = inputs['input_ids'].to(self.model.device)
+        attention_mask = inputs['attention_mask'].to(self.model.device)
 
-        # 运行CLIP文本编码器
         with torch.no_grad():
-            outputs = self.text_encoder(**inputs)
-            last_hidden_state = outputs.last_hidden_state
+            text_features = self.text_encoder(input_ids, attention_mask)
 
-        # 运行多头注意力层
-        attn_output, attention_weights = self.mha(last_hidden_state, last_hidden_state, last_hidden_state)
+        attn_output, attention_weights = self.mha(text_features.unsqueeze(1), text_features.unsqueeze(1), text_features.unsqueeze(1))
 
-        # 取[CLS]标记的输出作为语义嵌入
         embeddings = attn_output[:, 0, :]
 
-        # 调整输出维度
         embeddings = self.output_projection(embeddings)
 
-        # 如果输入多个关键词，对嵌入求平均
         if len(text) > 1:
             embeddings = embeddings.mean(dim=0, keepdim=True)
 
-        # 输出格式
         output = {"embeddings": embeddings, "attention_weights": attention_weights}
 
         return output
-
-'''临时测试函数
-def test_text_encoder():
-    # 可以在这里指定所需的输出维度
-    encoder = TextEncoderWithMHA(output_dim=768)
-    text = ["A cat"]  # 输入文本
-    result = encoder.encode_text(text)
-    print("Test Output:", result)
-    # 使用TensorBoard可视化注意力权重
-    writer = SummaryWriter('runs/clip_mha')
-    attention_weights = result["attention_weights"]
-    for i in range(attention_weights.size(1)):
-        writer.add_histogram(f'attention_weights/head_{i}', attention_weights[0, i].flatten(), global_step=0)
-    writer.close()
-
-
-if __name__ == "__main__":
-    test_text_encoder()
-'''

@@ -1,54 +1,75 @@
 import torch
 import torch.nn.functional as F
-from transformers import ViTConfig, BertModel, BertTokenizer, ViTModel
-from collections import deque
-import numpy as np
-from fastapi import FastAPI
+from fastapi import FastAPI, status
 from pydantic import BaseModel
-from models.clip_alignment_v2 import MemoryOptimizedCLIP, OptimizedCLIPLoss
+from transformers import BertTokenizer
+from models.clip_alignment_v3 import MemoryOptimizedCLIP, OptimizedCLIPLoss
 
-# 定义请求体
+# 定义请求模型
 class ClipConflictRequest(BaseModel):
-    images: list  # 假设输入是图像数据列表
-    texts: list   # 假设输入是文本数据列表
+    images: list
+    texts: list
 
 # 初始化FastAPI应用
 app = FastAPI()
 
-# 初始化模型
+# 初始化设备
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 初始化模型和损失函数
 model = MemoryOptimizedCLIP(device=device).to(device)
 loss_fn = OptimizedCLIPLoss(model)
 
+# 初始化分词器
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
 @app.post("/clip-conflict")
 async def clip_conflict(request: ClipConflictRequest):
     try:
-        # 检查输入数据的格式
+        # 验证输入数据类型
+        if not isinstance(request.images, list) or not isinstance(request.texts, list):
+            return {
+                "status": "error",
+                "message": "Invalid input data type: images and texts should be lists",
+                "error_code": 400
+            }, 400
+
+        # 验证图像和文本列表是否为空
         if len(request.images) == 0 or len(request.texts) == 0:
-            return {"error": "Invalid input data: images or texts list is empty"}
+            return {
+                "status": "error",
+                "message": "Invalid input data: images or texts list is empty",
+                "error_code": 400
+            }, 400
 
-        # 打印输入数据的形状，用于调试
-        print(f"Input images shape: {len(request.images)}")
-        print(f"Input texts shape: {len(request.texts)}")
+        # 尝试将图像数据转换为张量
+        try:
+            images = torch.tensor(request.images, dtype=torch.float32).to(device)
+        except ValueError:
+            return {
+                "status": "error",
+                "message": "Invalid image data: cannot convert to tensor",
+                "error_code": 400
+            }, 400
 
-        # 将输入转换为张量
-        images = torch.tensor(request.images, dtype=torch.float32).to(device)
-        # 检查 images 张量的维度，如果是 3D 张量，添加一个维度
+        # 检查图像维度
         if images.dim() == 3:
             images = images.unsqueeze(0)
-
-        # 检查通道维度，如果是 1，复制为 3 个通道
         if images.shape[1] == 1:
             images = images.repeat(1, 3, 1, 1)
 
-        text_inputs = model.tokenizer(
+        # 检查图像尺寸
+        if images.shape[2:] != (224, 224):
+            return {
+                "status": "error",
+                "message": "Invalid image size: images should be 224x224",
+                "error_code": 400
+            }, 400
+
+        # 处理文本数据
+        text_inputs = tokenizer(
             request.texts, return_tensors="pt", padding=True, truncation=True
         ).to(device)
-
-        # 打印转换后的张量形状，用于调试
-        print(f"Images tensor shape: {images.shape}")
-        print(f"Text inputs tensor shape: {text_inputs['input_ids'].shape}")
 
         # 前向传播
         logits = model(images, text_inputs, labels=torch.eye(images.size(0), device=device))
@@ -57,12 +78,37 @@ async def clip_conflict(request: ClipConflictRequest):
         # 获取模型动态信息
         dynamics = model.get_dynamics()
 
+        # 获取统计信息
+        precision = dynamics.get('precision', 0)
+        recall = dynamics.get('recall', 0)
+
         return {
+            "status": "success",
             "loss": loss.item(),
             "scale": dynamics['scale'],
-            "f1": dynamics['f1']
-        }
+            "f1": dynamics['f1'],
+            "precision": precision,
+            "recall": recall,
+            "error_code": 200
+        }, status.HTTP_200_OK
+
+    except IndexError as e:
+        return {
+            "status": "error",
+            "message": f"Index error occurred: {str(e)}",
+            "error_code": 400
+        }, 400
+    except RuntimeError as e:
+        return {
+            "status": "error",
+            "message": f"Runtime error occurred: {str(e)}",
+            "error_code": 500
+        }, 500
     except Exception as e:
         import traceback
-        traceback.print_exc()  # 打印详细的错误堆栈信息
-        return {"error": str(e)}    
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"An unexpected error occurred: {str(e)}",
+            "error_code": 500
+        }, 500
