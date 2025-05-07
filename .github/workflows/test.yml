@@ -3,7 +3,7 @@ name: test_on_dev
 on:
   push:
     branches:
-      - feat/clip
+      - dev
 
 jobs:
   build-linux:
