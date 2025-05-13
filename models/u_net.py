@@ -40,6 +40,23 @@ class DoubleConv(nn.Module):
         """
         return self.conv(x)
 
+class SEBlock(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
 class SpatialSemanticAttention(nn.Module):
     """
     空间语义注意力模块
@@ -57,6 +74,17 @@ class SpatialSemanticAttention(nn.Module):
         self.W_k = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.W_v = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.W_o = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+
+        # 添加SE模块
+        self.se = SEBlock(in_channels)
+        
+        # 修改原卷积为1x1卷积+SE
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, 1),
+            nn.BatchNorm2d(in_channels),
+            nn.ReLU(inplace=True),
+            self.se
+        )
 
     def forward(self, x, semantic_embedding, weights):
         """
@@ -93,6 +121,9 @@ class SpatialSemanticAttention(nn.Module):
 
         # 融合原始特征图和注意力输出
         output = x + attn_output
+
+        # 使用带SE的卷积代替原卷积操作
+        attn_output = self.conv(attn_output)
 
         return output
 
@@ -168,7 +199,6 @@ class UNet(nn.Module):
 
         return self.final_conv(x)
 
-'''临时测试代码
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='UNet with Attention')
     parser.add_argument('--in_channels', type=int, default=3, help='Number of input channels')
@@ -250,7 +280,7 @@ if __name__ == "__main__":
 
     model = UNet(in_channels=args.in_channels, out_channels=args.out_channels).to(device)
     # 加载图片
-    image_path = 'image3.jpg'  # 输入图像地址
+    image_path = 'data/image3.jpg'  # 输入图像地址
     image = Image.open(image_path).convert('RGB')
     transform = transforms.Compose([
         transforms.Resize((128, 128)),
@@ -280,4 +310,3 @@ if __name__ == "__main__":
     # 清空缓存
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-'''
