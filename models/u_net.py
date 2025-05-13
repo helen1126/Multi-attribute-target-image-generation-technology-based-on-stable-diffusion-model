@@ -61,7 +61,7 @@ class SpatialSemanticAttention(nn.Module):
     """
     空间语义注意力模块
     """
-    def __init__(self, in_channels, semantic_dim):
+    def __init__(self, in_channels, semantic_dim, conflict_init=0.5):
         """
         初始化空间语义注意力模块
 
@@ -74,6 +74,10 @@ class SpatialSemanticAttention(nn.Module):
         self.W_k = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.W_v = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.W_o = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.conflict_adapter = nn.Sequential(
+            nn.Linear(1, in_channels),
+            nn.Sigmoid()
+        )
 
         # 添加SE模块
         self.se = SEBlock(in_channels)
@@ -133,7 +137,8 @@ class UNet(nn.Module):
     """
     def __init__(
             self, in_channels=3, out_channels=3, features=[64, 128, 256, 512], semantic_dim=768
-    ):
+            , clip_conflict_detector=None
+            ):
         """
         初始化UNet模型
 
@@ -199,6 +204,11 @@ class UNet(nn.Module):
 
         return self.final_conv(x)
 
+    def _init_weights_with_conflict(self, init_value):
+        # 使用冲突值初始化关键参数
+        for layer in [self.W_q, self.W_k, self.W_v]:
+            nn.init.normal_(layer.weight, mean=init_value, std=0.02)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='UNet with Attention')
     parser.add_argument('--in_channels', type=int, default=3, help='Number of input channels')
@@ -207,6 +217,10 @@ if __name__ == "__main__":
 
     # 检查 GPU 是否可用
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 新增CLIP模型初始化
+    from models.clip_alignment_v3 import MemoryOptimizedCLIP
+    clip_model = MemoryOptimizedCLIP(device=device).to(device)
 
     # 初始化文本编码器
     text_encoder = TextEncoderWithMHA()
@@ -278,7 +292,12 @@ if __name__ == "__main__":
         print(f"Failed to get dynamic weights: {response.text}")
         weights = [1.0] * len(text)
 
-    model = UNet(in_channels=args.in_channels, out_channels=args.out_channels).to(device)
+    # 修改UNet初始化
+    model = UNet(
+        in_channels=args.in_channels, 
+        out_channels=args.out_channels,
+        clip_conflict_detector=clip_model.get_conflict_detector()  # 添加冲突检测器
+    ).to(device)
     # 加载图片
     image_path = 'data/image3.jpg'  # 输入图像地址
     image = Image.open(image_path).convert('RGB')

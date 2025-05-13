@@ -5,28 +5,28 @@ from pydantic import BaseModel
 from transformers import BertTokenizer
 from models.clip_alignment_v3 import MemoryOptimizedCLIP, OptimizedCLIPLoss
 
-# ¶¨ÒåÇëÇóÄ£ĞÍ
+# å®šä¹‰è¯·æ±‚æ¨¡å‹
 class ClipConflictRequest(BaseModel):
     images: list
     texts: list
 
-# ³õÊ¼»¯FastAPIÓ¦ÓÃ
+# åˆå§‹åŒ–FastAPIåº”ç”¨
 app = FastAPI()
 
-# ³õÊ¼»¯Éè±¸
+# åˆå§‹åŒ–è®¾å¤‡
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ³õÊ¼»¯Ä£ĞÍºÍËğÊ§º¯Êı
+# åˆå§‹åŒ–æ¨¡å‹å’ŒæŸå¤±å‡½æ•°
 model = MemoryOptimizedCLIP(device=device).to(device)
 loss_fn = OptimizedCLIPLoss(model)
 
-# ³õÊ¼»¯·Ö´ÊÆ÷
+# åˆå§‹åŒ–åˆ†è¯å™¨
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
 @app.post("/clip-conflict")
 async def clip_conflict(request: ClipConflictRequest):
     try:
-        # ÑéÖ¤ÊäÈëÊı¾İÀàĞÍ
+        # éªŒè¯è¾“å…¥æ•°æ®ç±»å‹
         if not isinstance(request.images, list) or not isinstance(request.texts, list):
             return {
                 "status": "error",
@@ -34,7 +34,7 @@ async def clip_conflict(request: ClipConflictRequest):
                 "error_code": 400
             }, 400
 
-        # ÑéÖ¤Í¼ÏñºÍÎÄ±¾ÁĞ±íÊÇ·ñÎª¿Õ
+        # éªŒè¯å›¾åƒå’Œæ–‡æœ¬åˆ—è¡¨æ˜¯å¦ä¸ºç©º
         if len(request.images) == 0 or len(request.texts) == 0:
             return {
                 "status": "error",
@@ -42,7 +42,7 @@ async def clip_conflict(request: ClipConflictRequest):
                 "error_code": 400
             }, 400
 
-        # ³¢ÊÔ½«Í¼ÏñÊı¾İ×ª»»ÎªÕÅÁ¿
+        # å°è¯•å°†å›¾åƒæ•°æ®è½¬æ¢ä¸ºå¼ é‡
         try:
             images = torch.tensor(request.images, dtype=torch.float32).to(device)
         except ValueError:
@@ -52,13 +52,13 @@ async def clip_conflict(request: ClipConflictRequest):
                 "error_code": 400
             }, 400
 
-        # ¼ì²éÍ¼ÏñÎ¬¶È
+        # æ£€æŸ¥å›¾åƒç»´åº¦
         if images.dim() == 3:
             images = images.unsqueeze(0)
         if images.shape[1] == 1:
             images = images.repeat(1, 3, 1, 1)
 
-        # ¼ì²éÍ¼Ïñ³ß´ç
+        # æ£€æŸ¥å›¾åƒå°ºå¯¸
         if images.shape[2:] != (224, 224):
             return {
                 "status": "error",
@@ -66,19 +66,19 @@ async def clip_conflict(request: ClipConflictRequest):
                 "error_code": 400
             }, 400
 
-        # ´¦ÀíÎÄ±¾Êı¾İ
+        # å¤„ç†æ–‡æœ¬æ•°æ®
         text_inputs = tokenizer(
             request.texts, return_tensors="pt", padding=True, truncation=True
         ).to(device)
 
-        # Ç°Ïò´«²¥
+        # å‰å‘ä¼ æ’­
         logits = model(images, text_inputs, labels=torch.eye(images.size(0), device=device))
         loss = loss_fn(logits, logits.t())
 
-        # »ñÈ¡Ä£ĞÍ¶¯Ì¬ĞÅÏ¢
+        # è·å–æ¨¡å‹åŠ¨æ€ä¿¡æ¯
         dynamics = model.get_dynamics()
 
-        # »ñÈ¡Í³¼ÆĞÅÏ¢
+        # è·å–ç»Ÿè®¡ä¿¡æ¯
         precision = dynamics.get('precision', 0)
         recall = dynamics.get('recall', 0)
 

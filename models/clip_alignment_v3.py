@@ -305,7 +305,8 @@ class TextEncoder(nn.Module):
 
 # ========== 3.动态权重衰减集成 ====================================================
 class MemoryOptimizedCLIP(nn.Module):
-    """改进版CLIP模型，集成动态阈值优化"""
+    def get_conflict_detector(self):
+        return self.conflict_detector
     def __init__(self, use_dynamic_threshold=True, freeze_vit=6, freeze_bert=3, device='cpu'):
         super().__init__()
         self.device = device
