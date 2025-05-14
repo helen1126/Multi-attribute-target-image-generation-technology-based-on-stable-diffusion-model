@@ -131,6 +131,34 @@ class SpatialSemanticAttention(nn.Module):
 
         return output
 
+class SkipGate(nn.Module):
+    """跳跃连接门控机制"""
+    def __init__(self, channels):
+        super().__init__()
+        self.channel_att = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, channels//16, 1),
+            nn.ReLU(),
+            nn.Conv2d(channels//16, channels, 1),
+            nn.Sigmoid()
+        )
+        self.spatial_att = nn.Sequential(
+            nn.Conv2d(channels*2, 1, kernel_size=7, padding=3),
+            nn.Sigmoid()
+        )
+        # 添加可学习的对齐卷积层
+        self.align_conv = nn.Conv2d(channels, channels, kernel_size=1)
+        
+    def forward(self, x_skip, x_up):
+        # 使用可学习的对齐卷积
+        x_up = self.align_conv(x_up)
+        
+        # 通道注意力（使用对齐后的特征）
+        ca = self.channel_att(x_skip + x_up)
+        # 空间注意力（输入通道数修正为2倍）
+        sa = self.spatial_att(torch.cat([x_skip, x_up], dim=1))
+        return x_skip * ca + x_up * sa
+
 class UNet(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, features=[64, 128, 256, 512], semantic_dim=768, clip_conflict_detector=None):
         super().__init__()
@@ -144,7 +172,12 @@ class UNet(nn.Module):
             self.downs.append(SpatialSemanticAttention(feature, semantic_dim))  # 新增空间注意力
             in_channels = feature
 
-        # 新增跳跃连接注意力层
+        # 修正跳跃连接门控初始化
+        self.skip_gates = nn.ModuleList()
+        for feature in reversed(features):  # 改为逆序初始化以匹配上采样顺序
+            self.skip_gates.append(SkipGate(feature))
+        
+        # 保持原有的跳跃连接注意力层
         self.skip_attentions = nn.ModuleList()
         for feature in features:
             self.skip_attentions.append(
@@ -169,6 +202,7 @@ class UNet(nn.Module):
     def forward(self, x, semantic_embedding, weights):
         skip_connections = []
         
+        # 下采样部分保持不变
         for i in range(0, len(self.downs), 2):
             x = self.downs[i](x)
             x = self.downs[i+1](x, semantic_embedding, weights)
@@ -183,25 +217,30 @@ class UNet(nn.Module):
         x = self.bottleneck(x)
         skip_connections = skip_connections[::-1]
 
+        # 上采样部分保持原有插值方式
         for idx in range(0, len(self.ups), 3):
             x = self.ups[idx](x)
             skip_connection = skip_connections[idx // 3]
             
-            # 对上采样前的特征应用注意力
-            x = self.skip_attentions[-(idx//3 + 1)](x, semantic_embedding, weights)
+            # 保持原有形状检查和插值逻辑
             if x.shape != skip_connection.shape:
-                # 修改插值方法为三线性插值
+                # 保留原有的三线性/双线性插值方式
                 x = nn.functional.interpolate(
-                    x, 
+                    x,
                     size=skip_connection.shape[2:],
                     mode='trilinear' if len(skip_connection.shape) == 5 else 'bilinear',
                     align_corners=True
                 )
 
+            # 使用改进的门控机制融合特征
+            gate = self.skip_gates[idx//3]
+            x = gate(skip_connection, x)  # 使用门控机制代替简单拼接
+
+            # 后续处理保持不变
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx + 1](concat_skip)
-            x = self.ups[idx + 2](x, semantic_embedding, weights)  # 保持原有注意力机制
-            
+            x = self.ups[idx + 2](x, semantic_embedding, weights)
+
         return self.final_conv(x)
 
     def _init_weights_with_conflict(self, init_value):
