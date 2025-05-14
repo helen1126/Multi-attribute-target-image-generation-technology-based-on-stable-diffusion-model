@@ -23,9 +23,12 @@ class DoubleConv(nn.Module):
         """
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
+            # 替换为深度可分离卷积
+            nn.Conv2d(in_channels, in_channels, 3, 1, 1, groups=in_channels, bias=False),
+            nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
+            # 保持第二层卷积不变
             nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True)
