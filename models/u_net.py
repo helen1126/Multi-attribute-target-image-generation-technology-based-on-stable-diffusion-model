@@ -196,7 +196,13 @@ class UNet(nn.Module):
             skip_connection = skip_connections[idx // 3]
 
             if x.shape != skip_connection.shape:
-                x = nn.functional.interpolate(x, size=skip_connection.shape[2:], mode='bilinear', align_corners=True)
+                # 修改插值方法为三线性插值
+                x = nn.functional.interpolate(
+                    x, 
+                    size=skip_connection.shape[2:],
+                    mode='trilinear' if len(skip_connection.shape) == 5 else 'bilinear',
+                    align_corners=True
+                )
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx + 1](concat_skip)
