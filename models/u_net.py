@@ -132,30 +132,24 @@ class SpatialSemanticAttention(nn.Module):
         return output
 
 class UNet(nn.Module):
-    """
-    UNet模型，包含下采样、上采样和注意力机制
-    """
-    def __init__(
-            self, in_channels=3, out_channels=3, features=[64, 128, 256, 512], semantic_dim=768
-            , clip_conflict_detector=None
-            ):
-        """
-        初始化UNet模型
-
-        :param in_channels: 输入通道数
-        :param out_channels: 输出通道数
-        :param features: 特征图的通道数列表
-        :param semantic_dim: 语义嵌入维度
-        """
+    def __init__(self, in_channels=3, out_channels=3, features=[64, 128, 256, 512], semantic_dim=768, clip_conflict_detector=None):
         super().__init__()
         self.ups = nn.ModuleList()
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # 下采样部分
+        # 修改后的下采样部分
         for feature in features:
             self.downs.append(DoubleConv(in_channels, feature))
+            self.downs.append(SpatialSemanticAttention(feature, semantic_dim))  # 新增空间注意力
             in_channels = feature
+
+        # 新增跳跃连接注意力层
+        self.skip_attentions = nn.ModuleList()
+        for feature in features:
+            self.skip_attentions.append(
+                SpatialSemanticAttention(feature, semantic_dim)
+            )
 
         # 瓶颈层
         self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
@@ -173,28 +167,28 @@ class UNet(nn.Module):
         self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
     def forward(self, x, semantic_embedding, weights):
-        """
-        前向传播函数
-
-        :param x: 输入张量
-        :param semantic_embedding: 语义嵌入张量
-        :param weights: 动态权重
-        :return: 输出张量
-        """
         skip_connections = []
-
-        for down in self.downs:
-            x = down(x)
-            skip_connections.append(x)
+        
+        for i in range(0, len(self.downs), 2):
+            x = self.downs[i](x)
+            x = self.downs[i+1](x, semantic_embedding, weights)
+            
+            # 在存入跳跃连接前应用空间注意力
+            skip_idx = i // 2
+            attn_skip = self.skip_attentions[skip_idx](x, semantic_embedding, weights)
+            skip_connections.append(attn_skip)  # 使用注意力处理后的特征
+            
             x = self.pool(x)
-
+        
         x = self.bottleneck(x)
         skip_connections = skip_connections[::-1]
 
         for idx in range(0, len(self.ups), 3):
             x = self.ups[idx](x)
             skip_connection = skip_connections[idx // 3]
-
+            
+            # 对上采样前的特征应用注意力
+            x = self.skip_attentions[-(idx//3 + 1)](x, semantic_embedding, weights)
             if x.shape != skip_connection.shape:
                 # 修改插值方法为三线性插值
                 x = nn.functional.interpolate(
@@ -206,8 +200,8 @@ class UNet(nn.Module):
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.ups[idx + 1](concat_skip)
-            x = self.ups[idx + 2](x, semantic_embedding, weights)
-
+            x = self.ups[idx + 2](x, semantic_embedding, weights)  # 保持原有注意力机制
+            
         return self.final_conv(x)
 
     def _init_weights_with_conflict(self, init_value):
