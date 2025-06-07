@@ -117,6 +117,15 @@ class MGANetwork(nn.Module):
         weights = self.weight_matrix(embeddings.mean(dim=1), clip_features)
         weighted_features = torch.einsum('bsd,bd->bsd', embeddings, weights)
         return weighted_features
+    
+    def calculate_weights(self, text_prompts):
+        """Calculate dynamic weights based on text prompts"""
+        # Implement your weight calculation logic here
+        # Example implementation:
+        with torch.no_grad():
+            prompt_embeddings = self.text_encoder(text_prompts)
+            weights = torch.softmax(self.weight_matrix(prompt_embeddings), dim=-1)
+        return weights
 
 def validate_integration():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
